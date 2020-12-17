@@ -2,8 +2,13 @@ from sympy import mod_inverse
 
 class ModArith:
     def __init__(self, val, mod):
-        self.val = val % mod
-        self.m = mod
+        if isinstance(val, ModArith):
+            assert(mod == val.m)
+            self.val = val.val
+            self.m = mod
+        else:
+            self.val = val % mod
+            self.m = mod
 
     def __add__(self, other):
         assert(isinstance(other, ModArith))
@@ -34,6 +39,9 @@ class ModArith:
         assert(self.m == other.m)
         return self.val == other.val
 
+    def __neg__(self):
+        return ModArith(self.m-self.val, self.m)
+
     def iszero(self):
         return self.val == 0
 
@@ -62,7 +70,7 @@ def sub_(a, b):
 class Poly:
     def __init__(self, c, ctor):
         self.ctor = ctor
-        self.c = c
+        self.c = [ctor(i) for i in c]
         if len(self.c) > 0:
             while len(self.c) and self.c[0].iszero():
                 self.c.pop(0)
@@ -88,13 +96,15 @@ class Poly:
         acc = Poly([], self.ctor)
         x = self
         for c in reversed(other.c):
-            if not c.iszero():
-                acc = acc + x
+            acc = acc + x.scale(c)
             x = Poly(x.c+[c.zero()], self.ctor)
         return acc
 
     def __mod__(self, other):
         return divmod(self, other)[1]
+
+    def __neg__(self):
+        return Poly([-c for c in self.c], self.ctor)
 
     def __divmod__(self, other):
         rem = self
@@ -103,12 +113,8 @@ class Poly:
             r = rem.c[0]
             o = other.c[0]
             order = len(rem.c) - len(other.c)
-            x = Poly([self.ctor(1)]+order*[self.ctor(0)], self.ctor)
-            # assert((o*o.inv()).val == 1)
-            # c = r * o.inv()
-            c, z = divmod(r, o)
-            assert(z.iszero())
-            q = Poly([c*i for i in x.c], self.ctor)
+            c = r * o.inv()
+            q = Poly([c]+order*[self.ctor(0)], self.ctor)
             quot = quot + q
             rem = rem - q*other
         return (quot, rem)
@@ -117,19 +123,23 @@ class Poly:
         if len(self.c) == 0: return "0"
         return ' + '.join(reversed([f"{c} x^{n}" if n > 0 else f"{c}" for n, c in enumerate(reversed(self.c))]))
 
-M = lambda x: ModArith(x, 2)
+M = lambda x: ModArith(x, 7)
 P = lambda x: Poly(list(map(M, x)), M)
 
-a = P([1,1,1,0])
-b = P([0,1,0,0])
+a = P([1,2,1,0])
+b = P([0,2,0,0])
 str(a)
 str(b)
 str(divmod(a,b))
 
+# In[0]
+
 from hamming2 import allVectors
 import numpy as np
 
-def cycCode(gc, k):
+def cycCode(gc, k, base):
+    M = lambda x: ModArith(x, base)
+    P = lambda x: Poly(x, M)
     g = P(gc)
     r = g.order
     n = k+r
@@ -143,15 +153,16 @@ def cycCode(gc, k):
             cs.insert(0, 0)
         return cs
 
-    d = min(np.count_nonzero([i for i in encode(m)]) for m in itertools.islice(allVectors(k, 2), 1, None))
+    d = min(np.count_nonzero([i for i in encode(m)]) for m in itertools.islice(allVectors(k, base), 1, None))
     ec = (d-1)//2
     print(f"Code distance is {d}, can correct {ec} errors")
 
     tbl = {}
-    for ei in allVectors(n, 2):
+    for ei in allVectors(n, base):
         if 0 < np.count_nonzero(ei) <= ec:
             si = P(ei) % g
             tbl[str(si)] = np.reshape(ei, n)
+    print(f"Table size is {len(tbl)}")
 
     def decode(c):
         s = P(c) % g
@@ -163,8 +174,11 @@ def cycCode(gc, k):
 
     return (encode, decode)
 
-encode, decode = cycCode(gc=[1,0,1,0,0,1,1,1], k=4)
-c = encode([0,1,0,1])
-c[3] += 1
-c[5] += 1
+encode, decode = cycCode(gc=[1,0,1,0,0,1,1,1], k=4, base=4)
+
+# In[0]
+
+c = encode([1,2,3,0])
+c[3] += 2
+c[5] += 2
 decode(c)
